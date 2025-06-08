@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-SPRING_SERVER = http://14.63.178.163:8080#"http://localhost:8080"
+SPRING_SERVER = "http://14.63.178.163:8080"#"http://localhost:8080"
 JWT_TOKEN = os.getenv("JWT_TOKEN")
 
 def bring_menu_filter_restaurants(keywords:list):
