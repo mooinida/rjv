@@ -79,7 +79,7 @@ graph_builder.add_node("context_node", context_node)
 graph_builder.add_node("intersection_node", intersection_node)
 graph_builder.add_node("detail_node", detail_node)
 graph_builder.add_node("final_node", final_node)
-graph_builder.add_node("branch_node", RunnableLambda(lambda x: x))
+#graph_builder.add_node("branch_node", RunnableLambda(lambda x: x))
 
 # 흐름 연결도 이름에 맞게 수정
 graph_builder.set_entry_point("location_node")
