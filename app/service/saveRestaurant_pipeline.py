@@ -115,7 +115,7 @@ def get_coordinates_from_location(location: str) -> str:
         return {"error": f"예외 발생: {str(e)}"}
     
 
-SPRING_SERVER = "http://localhost:8080"
+SPRING_SERVER = "http://mooin.shop:8080"
 JWT_TOKEN = os.getenv("JWT_TOKEN")
 def get_nearby_restaurants_DB(latitude: float, longitude: float, radius: int) -> dict:
     params = {
