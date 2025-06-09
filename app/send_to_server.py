@@ -4,7 +4,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-SPRING_SERVER = "http://14.63.178.163:8080"#"http://localhost:8080"
+SPRING_SERVER = "http://mooin.shop:8080"
+
 JWT_TOKEN = os.getenv("JWT_TOKEN")
 
 def send_restaurant_rating(place_id: int, rating: float, count: int):
