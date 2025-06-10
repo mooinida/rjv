@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-SPRING_SERVER = "http://mooin.shop:8080"
+SPRING_SERVER = "http://localhost:8080"
 JWT_TOKEN = os.getenv("JWT_TOKEN")
 
 def bring_menu_filter_restaurants(keywords:list):
