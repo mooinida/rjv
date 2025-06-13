@@ -49,6 +49,10 @@ print("FastAPI .env file loaded.")
 # 프론트엔드로부터 받은 Access Token을 LangGraph 모듈에 전달합니다.
 @app.middleware("http")
 async def verify_jwt_token(request: Request, call_next):
+    # OPTIONS 요청은 CORS 프리플라이트 요청 → 인증 없이 통과시켜야 함
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
     if request.url.path.startswith("/api/langgraph"):
         auth_header = request.headers.get("Authorization")
         if not auth_header or not auth_header.startswith("Bearer "):
@@ -56,13 +60,9 @@ async def verify_jwt_token(request: Request, call_next):
             return JSONResponse(status_code=401, content={"detail": "Unauthorized: Missing or invalid token"})
 
         token = auth_header.split(" ")[1]
-        
-        # --- LangGraph 모듈의 전역 토큰 변수 업데이트 ---
-        # os.environ에만 JWT_TOKEN을 설정하면, 다른 모듈들이 os.getenv()로 이 값을 읽습니다.
-        os.environ["JWT_TOKEN"] = token 
-        
-    response = await call_next(request)
-    return response
+        os.environ["JWT_TOKEN"] = token
+
+    return await call_next(request)
 
 # --- LangGraph API 엔드포인트 --- (기존과 동일)
 @app.post("/api/langgraph/invoke")
