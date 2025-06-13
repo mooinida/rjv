@@ -1,5 +1,3 @@
-from service.prompt import build_review_prompt, build_final_recommendation_prompt
-from langchain_google_genai import ChatGoogleGenerativeAI
 import os
 from dotenv import load_dotenv
 import asyncio
@@ -44,7 +42,7 @@ async def get_final_recommendation(analyzed_restaurants: list, input_text: str) 
     try:
         # AI가 매긴 점수 데이터를 파싱합니다. ex: {"The Cozy Bistro": "4.8", ...}
         scores_data = json.loads(response_text)
-        
+
         # 원본 데이터에 AI 평점을 추가하고 점수 순으로 정렬합니다.
         for restaurant in analyzed_restaurants:
             # AI가 매긴 점수가 있으면 해당 점수를, 없으면 0점을 부여합니다.
@@ -57,7 +55,7 @@ async def get_final_recommendation(analyzed_restaurants: list, input_text: str) 
             key=lambda r: float(r.get("aiRating", 0.0)), 
             reverse=True
         )
-        
+
         # 상위 5개만 반환합니다.
         return sorted_restaurants[:5]
 
