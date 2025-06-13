@@ -15,7 +15,7 @@ review_prompt_template = PromptTemplate.from_template("""
 3. AI평점 , 실제평점
 """)
 
-# ✅✅✅ 이 부분이 수정되었습니다 ✅✅✅
+# ✅✅✅ 이 부분이 진짜 수정된 코드입니다. {{}} 를 {} 로 변경했습니다. ✅✅✅
 final_selection_prompt_template = PromptTemplate.from_template("""
 당신은 사용자의 요청에 가장 적합한 음식점 5개를 분석 결과를 바탕으로 추천하는 AI 큐레이터입니다.
 
@@ -32,16 +32,16 @@ final_selection_prompt_template = PromptTemplate.from_template("""
 
 ```json
 [
-  {{
+  {
     "name": "식당 이름",
     "reason": "추천 이유",
     "aiRating": "AI 평점(예: 4.8)",
     "actualRating": "실제 평점(예: 4.5)"
-  }},
-  {{
+  },
+  {
     "name": "두 번째 식당 이름",
     "reason": "두 번째 식당 추천 이유",
     "aiRating": "4.7",
     "actualRating": "4.9"
-  }}
+  }
 ]
