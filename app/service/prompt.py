@@ -10,6 +10,7 @@ review_prompt_template = PromptTemplate.from_template("""
 ------------------------------
 {review_text}
 ------------------------------
+
 1. 식당 이름 - 상세정보: 식당 url
 2. 추천이유
 3. AI평점 , 실제평점
@@ -20,9 +21,12 @@ review_prompt_template = PromptTemplate.from_template("""
 final_selection_prompt_template = PromptTemplate.from_template("""
 당신은 음식점 추천 AI 큐레이터입니다.
 사용자 요청과 AI 분석 결과를 바탕으로, 가장 적합한 음식점 5개를 JSON 배열 형식으로 추천해주세요.
+
 [사용자 요청]: {user_input}
+
 [AI 분석 결과]:
 {analyzed_results}
+
 [출력 형식]:
 - 반드시 JSON 배열 형식으로만 응답해야 합니다.
 - 다른 부가적인 설명이나 인사는 절대 포함하지 마세요.
