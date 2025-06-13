@@ -28,13 +28,14 @@ app = FastAPI()
 
 # --- CORS 설정 --- (기존과 동일)
 origins = [
-    "http://localhost:5173", # React 개발 서버 포트 (Vite 기본값)
-    "http://mooin.shop:8080", # 당신의 프론트엔드 배포 주소
+    "http://localhost:5173",         # 로컬 테스트
+    "http://mooin.shop",             # 프론트 도메인
+    "http://mooin.shop:5173",        # 혹시 프론트가 5173에서 테스트 중이라면 이것도 추가
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
