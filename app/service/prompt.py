@@ -15,6 +15,7 @@ review_prompt_template = PromptTemplate.from_template("""
 3. AI평점 , 실제평점
 """)
 
+# ✅✅✅ 이 부분이 수정되었습니다 ✅✅✅
 final_selection_prompt_template = PromptTemplate.from_template("""
 당신은 사용자의 요청에 가장 적합한 음식점 5개를 분석 결과를 바탕으로 추천하는 AI 큐레이터입니다.
 
@@ -44,43 +45,3 @@ final_selection_prompt_template = PromptTemplate.from_template("""
     "actualRating": "4.9"
   }}
 ]
-
-def build_review_prompt(restaurant: dict) -> str:
-        reviews = restaurant.get("reviews", [])
-        review_text = "\n".join([rev["text"] for rev in reviews])
-        return review_prompt_template.format_prompt(
-        name=restaurant.get("name", "이름 없음"),
-        rating=restaurant.get("rating", 0.0),
-        reviewCount=restaurant.get("reviewCount", 0),
-        url=restaurant.get("url", "URL 없음"),
-        review_text=review_text
-    ).to_string()
-
-def build_final_recommendation_prompt(analyzed_restaurants: list, input_text:str) -> str:
-    text_blocks = []
-    for r in analyzed_restaurants:
-        name = r["name"]
-        url = r["url"]
-        content = (
-            r["llmResult"].content if hasattr(r["llmResult"], "content") else str(r["llmResult"])
-        )
-        text_blocks.append(f" {name}\n URL: {url}\n{content.strip()}")
-
-    combined = "\n\n".join(text_blocks)
-
-    return final_selection_prompt_template.format_prompt(
-        user_input = input_text,
-        analyzed_results=combined
-    ).to_string()
-
-
-def build_context_prompt(restaurant:dict):
-    reviews = restaurant.get("reviews", [])
-    review_text = "\n".join([rev["text"] for rev in reviews])
-    return context_prompt_template.format(
-    name=restaurant.get("name", "이름 없음"),
-    rating=restaurant.get("rating", 0.0),
-    reviewCount=restaurant.get("reviewCount", 0),
-    url=restaurant.get("url", "URL 없음"),
-    review_text=review_text
-    )
