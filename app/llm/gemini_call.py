@@ -1,65 +1,69 @@
+from service.prompt import build_review_prompt, build_final_recommendation_prompt
+from langchain_google_genai import ChatGoogleGenerativeAI
 import os
 from dotenv import load_dotenv
 import asyncio
-import json
-import re
+import json # ⬅️ JSON 파싱을 위해 추가
+import re   # ⬅️ 정규식으로 JSON만 깔끔하게 추출하기 위해 추가
 
 load_dotenv()
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+
+# 스트리밍을 사용하지 않는 것이 최종 JSON 결과물을 얻기에 더 안정적일 수 있습니다.
 llm = ChatGoogleGenerativeAI(model="models/gemini-1.5-pro", google_api_key=GOOGLE_API_KEY)
 
-async def call_llm(prompt: str):
+async def call_llm(prompt: str, print_result: bool):
+    # 스트리밍을 사용하지 않고 전체 결과를 한 번에 받도록 수정
     result = await llm.ainvoke(prompt)
+    if print_result:
+        print(result.content)
     return result.content
 
 async def analyze_restaurant(restaurant: dict) -> dict:
     prompt = build_review_prompt(restaurant)
-    response_content = await call_llm(prompt)
-    return {
-        "name": restaurant.get("name"),
-        "reason": response_content, # AI가 생성한 추천 이유
-        "actualRating": str(restaurant.get("rating", "0.0")), # 실제 평점은 원래 데이터 사용
+    response_content = await call_llm(prompt, print_result=False)
+    result = {
+        "placeId": restaurant["placeId"],
+        "name": restaurant["name"],
+        "url": restaurant["url"],
+        "llmResult": response_content # .content를 사용
     }
+    return result
 
 async def run_llm_analysis(data: dict) -> list:
     restaurants = data.get("restaurants", [])
     if not isinstance(restaurants, list):
         raise ValueError("restaurants는 리스트여야 합니다.")
+
     tasks = [analyze_restaurant(r) for r in restaurants]
     return await asyncio.gather(*tasks)
 
+
 # ✅✅✅ 이 함수가 핵심적인 수정 부분입니다. ✅✅✅
-async def get_final_recommendation(analyzed_restaurants: list, input_text: str) -> list:
+async def get_final_recommendation(results: list, input_text:str) -> list:
     """
-    1차 분석된 레스토랑 목록과 사용자 요청을 바탕으로 최종 추천 목록을 생성합니다.
-    AI에게는 점수만 매기도록 하고, 파이썬에서 데이터를 최종 조합합니다.
+    AI가 생성한 JSON 형식의 문자열 응답을 파싱하여 파이썬 리스트로 반환합니다.
     """
-    final_prompt = build_final_recommendation_prompt(analyzed_restaurants, input_text)
-    response_text = await call_llm(final_prompt)
-    print("AI 최종 점수 응답:", response_text)
+    # service/prompt.py에서 수정한, JSON을 요청하는 프롬프트를 생성합니다.
+    final_prompt = build_final_recommendation_prompt(results, input_text)
+    response_text = await call_llm(final_prompt, print_result=False)
+    print("AI 원본 응답 (JSON):", response_text) # 디버깅용 로그
 
     try:
-        # AI가 매긴 점수 데이터를 파싱합니다. ex: {"The Cozy Bistro": "4.8", ...}
-        scores_data = json.loads(response_text)
+        # AI가 응답 앞뒤에 추가적인 텍스트(예: "추천 결과입니다.")나 ```json 마크다운을 붙이는 경우에 대비해
+        # 정규식으로 순수한 JSON 부분만 추출합니다.
+        json_match = re.search(r"\[[\s\S]*\]", response_text)
+        if not json_match:
+            raise json.JSONDecodeError("응답에서 JSON 배열을 찾을 수 없습니다.", response_text, 0)
+        
+        json_str = json_match.group(0)
+        
+        # 추출한 JSON 문자열을 파이썬 리스트 객체로 변환합니다.
+        parsed_json = json.loads(json_str)
+        return parsed_json
 
-        # 원본 데이터에 AI 평점을 추가하고 점수 순으로 정렬합니다.
-        for restaurant in analyzed_restaurants:
-            # AI가 매긴 점수가 있으면 해당 점수를, 없으면 0점을 부여합니다.
-            ai_score = scores_data.get(restaurant["name"], "0.0")
-            restaurant["aiRating"] = ai_score
-
-        # aiRating을 기준으로 내림차순 정렬합니다.
-        sorted_restaurants = sorted(
-            analyzed_restaurants, 
-            key=lambda r: float(r.get("aiRating", 0.0)), 
-            reverse=True
-        )
-
-        # 상위 5개만 반환합니다.
-        return sorted_restaurants[:5]
-
-    except (json.JSONDecodeError, TypeError) as e:
-        print(f"❌ 최종 추천 결과 파싱 또는 정렬 실패: {e}")
-        # 실패 시, 그냥 1차 분석 결과라도 반환합니다.
-        return analyzed_restaurants[:5]
+    except json.JSONDecodeError as e:
+        print(f"❌ 최종 추천 결과 JSON 파싱 실패: {e}")
+        # 파싱 실패 시, 프론트엔드에서 에러를 인지할 수 있도록 에러 메시지를 담은 리스트를 반환합니다.
+        return [{"error": "AI 답변 형식 오류로 결과를 표시할 수 없습니다."}]
