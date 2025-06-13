@@ -16,47 +16,34 @@ review_prompt_template = PromptTemplate.from_template("""
 """)
 
 final_selection_prompt_template = PromptTemplate.from_template("""
-아래는 여러 식당에 대한 AI 분석 결과입니다.
+당신은 사용자의 요청에 가장 적합한 음식점 5개를 분석 결과를 바탕으로 추천하는 AI 큐레이터입니다.
 
 [사용자 요청]
 {user_input}
 
 [AI 분석 결과]
 {analyzed_results}
-                                                            
 
-조건:
-- 사용자의 요청에 어울리는 식당을 5곳 추천해주세요.
-- 어울린다고 생각한 이유도 설명해주세요.
-아래 형식으로 정리해서 답해주세요:
+위 분석 결과를 바탕으로, 사용자의 요청에 가장 부합하는 음식점 5개를 골라 아래의 JSON 형식에 맞춰서 추천해주세요.
+- 각 필드는 쌍따옴표로 감싸야 합니다.
+- 추천 이유는 1~2 문장으로 간결하게 작성해주세요.
+- 다른 설명 없이 JSON 데이터만 응답해야 합니다.
 
-1. 식당 이름 - 상세점보:식당url
-2. 추천이유                                     
-3. AI평점 , 실제평점
-""")
-
-context_prompt_template= PromptTemplate.from_template("""
-    식당 이름: {name}
-    실제 평점: {rating}
-    리뷰 수: {reviewCount}
-
-    아래는 이 식당에 대한 실제 리뷰입니다:
-    ------------------------------
-    {review_text}
-    ------------------------------
-
-    리뷰를 기반으로 이 식당이 다음과 같은 측면에서 어떤지 판단하세요:
-    - 상황 (예: 혼밥, 회식, 가족 외식 등)
-    - 분위기 (예: 조용한, 감성적인, 활기찬 등)
-    - 목적 (예: 데이트, 가볍게 한잔 등)
-
-    이 식당을 특정 상황/분위기/목적으로 추천할 수 있는 이유를 설명하고, AI 별점을 부여하세요.
-
-    형식:
-    식당 이름) - 상세점보):식당url
-    추천이유)                                     
-    AI평점) , 실제평점)
-    """)
+```json
+[
+  {{
+    "name": "식당 이름",
+    "reason": "추천 이유",
+    "aiRating": "AI 평점(예: 4.8)",
+    "actualRating": "실제 평점(예: 4.5)"
+  }},
+  {{
+    "name": "두 번째 식당 이름",
+    "reason": "두 번째 식당 추천 이유",
+    "aiRating": "4.7",
+    "actualRating": "4.9"
+  }}
+]
 
 def build_review_prompt(restaurant: dict) -> str:
         reviews = restaurant.get("reviews", [])
