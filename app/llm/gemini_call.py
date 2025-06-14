@@ -4,6 +4,8 @@ import os
 from dotenv import load_dotenv
 import asyncio
 import json
+from typing import List
+
 JWT_TOKEN = os.getenv("JWT_TOKEN")
 load_dotenv()
 
