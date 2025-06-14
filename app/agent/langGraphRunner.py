@@ -70,9 +70,12 @@ async def detail_node(state: State) -> dict:
     return {"restaurant_details": details}
 
 async def final_node(state: State) -> dict:
-    result = await final_recommend(state["restaurant_details"], state["user_input"])
-    print("📦 final_node result:", result)
-    return {"result": result}
+    llm_result = await final_recommend(state.user_id, state.restaurant_ids)
+    return {
+        "user_input": state.user_input,
+        "result": llm_result,  # → List[dict] 형태로 응답됨
+        "end": True
+    }
 
 
 # LangGraph 설정
