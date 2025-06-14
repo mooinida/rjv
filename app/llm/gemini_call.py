@@ -34,16 +34,28 @@ async def run_llm_analysis(data: dict) -> list:
     return await asyncio.gather(*(analyze_restaurant(r) for r in restaurants))
 
 async def get_final_recommendation(results: list, input_text: str) -> list:
+    """
+    AI가 생성한 JSON 형식의 문자열 응답을 파싱하여 파이썬 리스트로 반환합니다.
+    """
+
     final_prompt = build_final_recommendation_prompt(results, input_text)
-    response_text = await call_llm(final_prompt)
-    print("📦 최종 추천 응답:", response_text)
+
+    # ✅ 여기에서 응답을 출력하도록 수정 (True로 변경)
+    response_text = await call_llm(final_prompt, print_result=True)  # ✅ 로그 출력
+
+    print("🎯 Gemini LLM 응답 원문 ↓↓↓")
+    print(response_text)  # ✅ 반드시 찍히도록 이 줄도 추가!
 
     try:
         json_match = re.search(r"\[[\s\S]*\]", response_text)
         if not json_match:
-            raise json.JSONDecodeError("JSON 배열을 찾을 수 없습니다.", response_text, 0)
+            print("❌ JSON 정규식 매칭 실패. 전체 응답:\n", response_text)
+            raise ValueError("LLM 응답에서 JSON 배열을 찾을 수 없습니다.")
+        
         json_str = json_match.group(0)
-        return json.loads(json_str)
+        parsed_json = json.loads(json_str)
+        return parsed_json
+
     except json.JSONDecodeError as e:
-        print("❌ JSON 파싱 실패:", e)
-        return [{"error": "AI 응답 형식 오류로 추천 결과를 생성할 수 없습니다."}]
+        print(f"❌ 최종 추천 결과 JSON 파싱 실패: {e}")
+        return [{"error": "AI 답변 형식 오류로 결과를 표시할 수 없습니다."}]
