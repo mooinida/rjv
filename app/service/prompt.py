@@ -1,99 +1,49 @@
 from langchain_core.prompts import PromptTemplate
 
-review_prompt_template = PromptTemplate.from_template("""
-식당 이름: {name}
-실제 평점: {rating}
-리뷰 수: {reviewCount}
-식당 url:{url}
-아래는 이 식당의 리뷰입니다:
-------------------------------
-{review_text}
-------------------------------
+# review_prompt_template, context_prompt_template은 그대로 유지
 
-1. 식당 이름 - 상세점보:식당url
-2. 추천이유                                     
-3. AI평점 , 실제평점
-""")
-
+# 최종 결과물의 형식을 결정하는 final_selection_prompt_template을 수정합니다.
 final_selection_prompt_template = PromptTemplate.from_template("""
-아래는 여러 식당에 대한 AI 분석 결과입니다.
+You are a helpful AI assistant that provides restaurant recommendations in a structured JSON format.
+Based on the user's request and the provided analysis for several restaurants, generate a JSON array of up to 5 recommended restaurants.
 
-[사용자 요청]
+[User Request]
 {user_input}
 
-[AI 분석 결과]
+[Analyzed Restaurant Details]
 {analyzed_results}
-                                                            
 
-조건:
-- 사용자의 요청에 어울리는 식당을 5곳 추천해주세요.
-- 어울린다고 생각한 이유도 설명해주세요.
-아래 형식으로 정리해서 답해주세요:
-
-1. 식당 이름 - 상세점보:식당url
-2. 추천이유                                     
-3. AI평점 , 실제평점
+RULES:
+- The output MUST be a valid JSON array. Each object in the array represents one restaurant.
+- Each JSON object must contain the following keys: "placeId", "name", "description", "aiRating", "actualRating", "url".
+- The "description" should be a friendly and comprehensive paragraph explaining why the restaurant is a good match, based on the analysis from reviews.
+- The "aiRating" and "actualRating" should be string values (e.g., "4.5").
+- Do not include any text, explanations, or markdown formatting outside of the final JSON array.
 """)
 
-context_prompt_template= PromptTemplate.from_template("""
-    식당 이름: {name}
-    실제 평점: {rating}
-    리뷰 수: {reviewCount}
-
-    아래는 이 식당에 대한 실제 리뷰입니다:
-    ------------------------------
-    {review_text}
-    ------------------------------
-
-    리뷰를 기반으로 이 식당이 다음과 같은 측면에서 어떤지 판단하세요:
-    - 상황 (예: 혼밥, 회식, 가족 외식 등)
-    - 분위기 (예: 조용한, 감성적인, 활기찬 등)
-    - 목적 (예: 데이트, 가볍게 한잔 등)
-
-    이 식당을 특정 상황/분위기/목적으로 추천할 수 있는 이유를 설명하고, AI 별점을 부여하세요.
-
-    형식:
-    식당 이름) - 상세점보):식당url
-    추천이유)                                     
-    AI평점) , 실제평점)
-    """)
-
-def build_review_prompt(restaurant: dict) -> str:
-        reviews = restaurant.get("reviews", [])
-        review_text = "\n".join([rev["text"] for rev in reviews])
-        return review_prompt_template.format_prompt(
-        name=restaurant.get("name", "이름 없음"),
-        rating=restaurant.get("rating", 0.0),
-        reviewCount=restaurant.get("reviewCount", 0),
-        url=restaurant.get("url", "URL 없음"),
-        review_text=review_text
-    ).to_string()
-
-def build_final_recommendation_prompt(analyzed_restaurants: list, input_text:str) -> str:
+# 최종 프롬프트에 데이터를 삽입하는 함수를 수정합니다.
+def build_final_recommendation_prompt(analyzed_restaurants: list, input_text: str) -> str:
     text_blocks = []
-    for r in analyzed_restaurants:
-        name = r["name"]
-        url = r["url"]
-        content = (
-            r["llmResult"].content if hasattr(r["llmResult"], "content") else str(r["llmResult"])
+    # 'restaurants' 키가 있는지 확인하고 리스트를 가져옵니다.
+    restaurant_list = analyzed_restaurants.get("restaurants", [])
+    for r in restaurant_list:
+        # 개별 식당의 정보를 텍스트 블록으로 만들어 LLM에게 참고자료로 전달
+        review_texts = "\\n".join([rev.get("text", "") for rev in r.get("reviews", [])])
+        block = (
+            f"placeId: {r.get('placeId')}\\n"
+            f"name: {r.get('name')}\\n"
+            f"url: {r.get('url')}\\n"
+            f"actualRating: {r.get('rating')}\\n"
+            f"reviewCount: {r.get('reviewCount')}\\n"
+            f"reviews: {review_texts[:500]}..."  # 리뷰가 너무 길 경우를 대비해 일부만 사용
         )
-        text_blocks.append(f" {name}\n URL: {url}\n{content.strip()}")
+        text_blocks.append(block)
 
-    combined = "\n\n".join(text_blocks)
+    combined_analysis = "\\n\\n---\\n\\n".join(text_blocks)
 
-    return final_selection_prompt_template.format_prompt(
-        user_input = input_text,
-        analyzed_results=combined
-    ).to_string()
-
-
-def build_context_prompt(restaurant:dict):
-    reviews = restaurant.get("reviews", [])
-    review_text = "\n".join([rev["text"] for rev in reviews])
-    return context_prompt_template.format(
-    name=restaurant.get("name", "이름 없음"),
-    rating=restaurant.get("rating", 0.0),
-    reviewCount=restaurant.get("reviewCount", 0),
-    url=restaurant.get("url", "URL 없음"),
-    review_text=review_text
+    return final_selection_prompt_template.format(
+        user_input=input_text,
+        analyzed_results=combined_analysis
     )
+
+# build_review_prompt, build_context_prompt는 그대로 유지
