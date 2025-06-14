@@ -1,14 +1,17 @@
+# agent/langGraphRunner.py
+
 import os
 import sys
 import asyncio
 
+# 프로젝트 루트 경로를 sys.path에 추가하여 다른 모듈을 임포트할 수 있도록 함
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from langgraph.graph import StateGraph, END
-from langchain_core.runnables import Runnable
 from typing import TypedDict
 from langchain_core.runnables import RunnableLambda
-from agent.conditional_edges import route_by_agent
+
+# 'after' 아키텍처에 맞는 gpt_tools의 함수들을 임포트
 from tools.gpt_tools import (
     get_location_tool,
     get_menu_tool,
@@ -17,46 +20,56 @@ from tools.gpt_tools import (
     get_restaurant_info,
     final_recommend,
 )
-from service.saveRestaurant_pipeline import next_tool
 
-# --- 토큰 관리 관련 import (자동 갱신 관련 제거) ---
-# bring_to_server의 refresh_access_token_if_needed 등은 이제 직접 호출하지 않음
-# get_menu, review_fetch의 httpx 갱신 함수도 제거 (각 _make_authenticated_request_httpx 내에서만 사용)
-
-
-# ✅ 수정: 상태에 user_input 포함
+# --- 상태 정의 (State Definition) ---
+# user_id를 포함하여 인증 및 데이터 조회에 사용
 class State(TypedDict):
+    user_id: str
     user_input: str
-    location: list
-    menu: list
-    context: list
+    location: dict
+    menu: dict
+    context: dict
     candidates: dict          
     restaurant_details: dict  
-    result: dict
+    result: list # 최종 결과는 이제 JSON 객체의 리스트
+    end: bool # 그래프를 조기 종료하기 위한 플래그
 
-# ✅ 각 노드에서 user_input을 다음 상태로 명시적으로 넘겨줘야 함
-async def location_node(state: State) -> dict:
-    location = await get_location_tool(state["user_input"])
-    return {
-        "location": location,
-        "user_input": state["user_input"]
-    }
+# --- 노드 함수 (Node Functions) ---
 
-async def menu_node(state: State) -> dict:
-    menu = await get_menu_tool(state["user_input"])
-    return {
-        "menu": menu,
-        "user_input": state["user_input"]
-    }
+# ✅ 성능 개선: 위치, 메뉴, 컨텍스트를 병렬로 추출하는 노드
+async def extract_all(state: State) -> dict:
+    """사용자 입력에서 위치, 메뉴, 컨텍스트 정보를 병렬로 추출합니다."""
+    try:
+        user_id = state["user_id"]
+        user_input = state["user_input"]
+        
+        # 세 가지 정보 추출 작업을 동시에 실행
+        location_task = get_location_tool(user_id, user_input)
+        menu_task = get_menu_tool(user_id, user_input)
+        context_task = get_context_tool(user_id, user_input)
 
-async def context_node(state: State) -> dict:
-    context = await get_context_tool(state["user_input"])
-    return {
-        "context": context,
-        "user_input": state["user_input"]
-    }
+        location, menu, context = await asyncio.gather(
+            location_task, menu_task, context_task, return_exceptions=True
+        )
+        
+        # 위치 정보가 없는 경우, 추천을 진행할 수 없으므로 그래프를 종료
+        if not location.get("restaurants"):
+            return {
+                "end": True, # 종료 플래그 설정
+                "result": [{"error": "장소명을 인식할 수 없습니다. 더 자세한 장소명과 함께 다시 질문해주세요."}]
+            }
+
+        return {
+            "location": location,
+            "menu": menu,
+            "context": context
+        }
+    except Exception as e:
+        print(f"❌ extract_all 노드에서 에러 발생: {e}")
+        return {"end": True, "result": [{"error": "정보를 추출하는 중 오류가 발생했습니다."}]}
 
 async def intersection_node(state: State) -> dict:
+    """추출된 정보를 바탕으로 교집합 식당을 찾습니다."""
     candidates = intersection_restaurant(
         state["location"],
         state["menu"],
@@ -64,96 +77,52 @@ async def intersection_node(state: State) -> dict:
     )
     return {"candidates": candidates}
 
-
 async def detail_node(state: State) -> dict:
-    details = get_restaurant_info(state["candidates"])
+    """후보 식당들의 상세 정보를 가져옵니다."""
+    details = get_restaurant_info(state["user_id"], state["candidates"])
     return {"restaurant_details": details}
 
-async def final_node(state: State) -> dict:
-    result = await final_recommend(
-        state["user_id"],              # ← user_id 따로 넘기기
-        state["restaurant_details"],  # ← 이건 dict임
-        state["user_input"]
-    )
-    return {
-        "result": result["result"],
-        "restaurant_aiRating": result["aiRating"]
-    }
+async def final_node(state: State) -> dict:  
+    """최종 추천 결과를 생성합니다."""
+    # final_recommend는 이제 JSON 객체의 리스트를 반환
+    result_list = await final_recommend(state["restaurant_details"], state["user_input"])
+    return {"result": result_list}
 
+# --- 조건부 엣지 (Conditional Edge) ---
+def next_tool_selector(state: dict) -> str:
+    """extract_all 노드 이후 분기점을 결정합니다."""
+    if state.get("end") is True:
+        # end 플래그가 설정되었다면 그래프를 종료
+        return END
+    # 그렇지 않으면 교집합 노드로 진행
+    return "intersection_node"
 
-# LangGraph 설정
+# --- 그래프 구성 (Graph Construction) ---
 graph_builder = StateGraph(State)
 
-graph_builder.add_node("location_node", location_node)
-graph_builder.add_node("menu_node", menu_node)
-graph_builder.add_node("context_node", context_node)
+# 노드 등록
+graph_builder.add_node("extract_filters", RunnableLambda(extract_all))
 graph_builder.add_node("intersection_node", intersection_node)
 graph_builder.add_node("detail_node", detail_node)
 graph_builder.add_node("final_node", final_node)
 
+# 그래프 진입점 설정
+graph_builder.set_entry_point("extract_filters")
 
-graph_builder.set_entry_point("location_node")
-graph_builder.add_edge("location_node", "menu_node")
-graph_builder.add_edge("menu_node", "context_node")
-graph_builder.add_edge("context_node", "intersection_node")
+# 엣지 연결
+graph_builder.add_conditional_edges(
+    "extract_filters", # 시작 노드
+    next_tool_selector # 조건부 함수
+    # 이 함수가 반환하는 문자열에 따라 다음 노드가 결정됨
+    # "intersection_node" 또는 END
+)
 graph_builder.add_edge("intersection_node", "detail_node")
 graph_builder.add_edge("detail_node", "final_node")
-graph_builder.add_edge("final_node", END)
+graph_builder.add_edge("final_node", END) # final_node 이후 그래프 종료
 
-
-# 실행 함수 (인증 오류 처리 간소화)
+# --- 실행 함수 (Executor) ---
 async def run_recommendation_pipeline(state: dict) -> dict:
+    """정의된 LangGraph를 컴파일하고 실행합니다."""
     graph = graph_builder.compile()
-    try:
-        result = await graph.ainvoke(state)
-        print(result)
-        return result
-    except RuntimeError as e: # 인증 실패 예외는 여기에서 처리 (상위 호출자에게 전달)
-        print(f"\n❌ 애플리케이션 실행 실패: {e}")
-        # 오류 메시지를 사용자에게 안내하고, 재로그인을 유도
-        return {"error": f"Authentication required: {e}. Please log in manually."}
-
-
-async def run_from_node(state: dict, entry_node: str) -> dict:
-    graph = graph_builder.compile()
-    try:
-        partial_graph = graph.with_config({"entry_point": entry_node})
-        result = await partial_graph.ainvoke(state)
-        return result
-    except RuntimeError as e:
-        print(f"\n❌ 애플리케이션 실행 실패: {e}")
-        return {"error": f"Authentication required: {e}. Please log in manually."}
-
-
-# 테스트 (자동 토큰 관리 로직 제거)
-async def main():
-    # 초기 토큰 유효성 검사 및 갱신 로직 제거
-    # JWT_TOKEN은 이제 FastAPI 미들웨어에서 받아서 os.environ에 설정될 것으로 기대
-    # 즉, 이 스크립트 실행 전에는 JWT_TOKEN이 os.environ에 없어도 됩니다.
-
-    state = {"user_input": input("처음 요청을 입력하세요: ")}
-
-    while True:
-        if "result" not in state or ("error" in state and "Authentication required" in state["error"]):
-            state = await run_recommendation_pipeline(state)
-            if "error" in state: 
-                print("\n🚫 LangGraph 실행 중 인증 오류 발생. 프론트엔드에서 다시 로그인해주세요.")
-                break # 프로그램 종료
-            print("\n📍 추천 결과:")
-            print(state.get("result"))
-        else:
-            followup = input("\n👉 추가 요청을 입력하세요 (종료하려면 exit): ")
-            if followup.lower() == "exit":
-                break
-
-            state["user_input"] = followup
-            next_node = next_tool(state)
-            if next_node == "end":
-                break
-
-            state.pop("result", None)
-            state = await run_from_node(state, entry_node=next_node)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+    result = await graph.ainvoke(state)
+    return result
