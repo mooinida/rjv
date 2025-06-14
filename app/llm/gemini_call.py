@@ -3,6 +3,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 import os
 from dotenv import load_dotenv
 import asyncio
+import json
 JWT_TOKEN = os.getenv("JWT_TOKEN")
 load_dotenv()
 
@@ -38,10 +39,13 @@ async def run_llm_analysis(data: dict) -> list:
     tasks = [analyze_restaurant(r) for r in restaurants]
     return await asyncio.gather(*tasks)
 
+async def get_final_recommendation(llm_result_list: List[dict]) -> List[dict]:
+    # Gemini에 넣을 프롬프트 구성
+    prompt = build_final_recommendation_prompt(llm_result_list)
+    response = await call_llm(prompt)
 
-async def get_final_recommendation(results: list, input_text:str) -> str:
-    """
-    전체 흐름: 개별 분석 → 종합 프롬프트 → 최종 추천 생성
-    """
-    final_prompt = build_final_recommendation_prompt(results, input_text)
-    return await call_llm(final_prompt, print_result = True)
+    try:
+        parsed_result = json.loads(response)
+        return parsed_result  # 프론트에서 바로 카드 출력 가능
+    except json.JSONDecodeError:
+        return [{"title": "추천 결과를 불러오지 못했습니다.", "description": response}]
