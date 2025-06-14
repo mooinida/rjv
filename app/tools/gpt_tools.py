@@ -87,10 +87,10 @@ def intersection_restaurant(location:dict, menu:dict, context:dict):
     except Exception as e:
         return {"error": str(e)}
 
-async def final_recommend(restaurants_info: dict, input_text:str) -> dict:
-    ai_rating = await run_llm_analysis(restaurants_info)
-    results = await get_final_recommendation(ai_rating, input_text)
-    return results
+async def final_recommend(user_id: str, restaurants_info: dict, input_text: str) -> dict:
+    ai_rating = await run_llm_analysis(restaurants_info)  # ← user_id가 필요하면 여기서 활용
+    result = await get_final_recommendation(ai_rating, input_text)
+    return {"result": result, "aiRating": ai_rating}
 
 graph_builder = StateGraph(State)
 
