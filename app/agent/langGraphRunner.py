@@ -70,11 +70,14 @@ async def detail_node(state: State) -> dict:
     return {"restaurant_details": details}
 
 async def final_node(state: State) -> dict:
-    llm_result = await final_recommend(state.user_id, state.restaurant_ids)
+    result = await final_recommend(
+        state["user_id"],              # ← user_id 따로 넘기기
+        state["restaurant_details"],  # ← 이건 dict임
+        state["user_input"]
+    )
     return {
-        "user_input": state.user_input,
-        "result": llm_result,  # → List[dict] 형태로 응답됨
-        "end": True
+        "result": result["result"],
+        "restaurant_aiRating": result["aiRating"]
     }
 
 
