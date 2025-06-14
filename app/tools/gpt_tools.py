@@ -1,100 +1,96 @@
-# app/tools/gpt_tools.py
-
 import os
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-import asyncio
 
-from llm.gemini_call import get_final_recommendation
 from service.saveRestaurant_pipeline import (
     get_location_and_context,
     get_location_and_menu,
     get_coordinates_from_location,
     get_location_from_text,
-    filtering_restaurant
+    get_nearby_restaurants_DB
 )
 from bring_to_server import (
-    bring_nearby_restaurants,
     bring_menu_filter_restaurants,
     bring_context_filter_restaurants,
-    bring_restaurants_list,
-    bring_rating_count
+    bring_restaurants_list
 )
+from llm.gemini_call import run_llm_analysis, get_final_recommendation
+from collections import Counter
+from typing import TypedDict
+from langgraph.graph import StateGraph
+
+# Define the state structure
+class State(TypedDict):
+    user_input: str
+    location: dict
+    menu: dict
+    context: dict
+    candidates: dict
+    restaurant_details: dict
+    result: dict
+
+# LangGraph-compatible tools
 
 async def get_location_tool(input_text: str) -> dict:
-    print("locationTool 사용")
-    location = await get_location_from_text(input_text)
-    if not location:
-        return {"restaurants": []}
-    coords = await get_coordinates_from_location(location)
+    print("locationTool사용")
+    location = get_location_from_text(input_text)
+    coords = get_coordinates_from_location(location)
     if "error" in coords:
         return coords
-    restaurants = bring_nearby_restaurants(coords["latitude"], coords["longitude"], radius=500)
+    restaurants = get_nearby_restaurants_DB(coords["latitude"], coords["longitude"], radius=500)
     return restaurants
 
+
 async def get_menu_tool(input_text: str) -> dict:
-    print("getmenuTool 사용")
-    keywords = await get_location_and_menu(input_text)
-    if not keywords:
-        return {"restaurants": []}
+    print("getmenuTool사용")
+    keywords = get_location_and_menu(input_text)
     restaurants = bring_menu_filter_restaurants(keywords)
     return restaurants
 
+
 async def get_context_tool(input_text: str) -> dict:
-    print("getcontextTool 사용")
-    contexts = await get_location_and_context(input_text)
-    if not contexts:
-        return {"restaurants": []}
+    print("getcontextTool사용")
+    contexts = get_location_and_context(input_text)
     restaurants = bring_context_filter_restaurants(contexts)
     return restaurants
 
-def intersection_restaurant(location: dict, menu: dict, context: dict) -> dict:
-    print("교집합 함수 호출")
+
+def get_restaurant_info(restaurant_ids: dict) -> dict:
+    print("정보가져오기 함수")
     try:
-        location_ids = set(r['placeId'] for r in location.get("restaurants", []))
-        menu_ids = set(r['placeId'] for r in menu.get("restaurants", []))
-        context_ids = set(r['placeId'] for r in context.get("restaurants", []))
+        restaurants = restaurant_ids.get("restaurants", [])
+        data = bring_restaurants_list(restaurants)
+        print(data)
+        return data
+    except Exception as e:
+        return {"error": f"파싱 실패: {str(e)}"}
 
-        # 메뉴나 컨텍스트 키워드가 없었을 경우, 해당 집합을 전체 식별자 집합으로 간주하여 교집합에 영향을 주지 않도록 함
-        if not menu.get("restaurants"):
-            menu_ids = location_ids.copy()
-        if not context.get("restaurants"):
-            context_ids = location_ids.copy()
 
-        lmc_intersection = list(location_ids & menu_ids & context_ids)
-        if len(lmc_intersection) >= 3:
-            print(f"✅ 3요소 교집합 사용: {len(lmc_intersection)}개")
-            return {"restaurants": lmc_intersection}
+def intersection_restaurant(location:dict, menu:dict, context:dict):
+    """
+    여러 리스트에서 2번 이상 등장한 식당 ID만 반환하는 도구.
+    """
+    print("교집합함수 호출")
+    try:
+        location_ids = location.get("restaurants", [])
+        menu_ids = menu.get("restaurants", [])
+        context_ids = context.get("restaurants", [])
 
-        lm_intersection = list(location_ids & menu_ids)
-        lc_intersection = list(location_ids & context_ids)
-        
-        combined = list(set(lm_intersection + lc_intersection))
-        if len(combined) >= 3:
-            print(f"✅ 2요소 교집합 사용: {len(combined)}개")
-            return {"restaurants": combined}
+        all_ids = location_ids + menu_ids + context_ids
+        counter = Counter(all_ids)
 
-        print(f"⚠️ 교집합 결과가 너무 적어 위치 기반으로만 추천합니다: {len(location_ids)}개")
-        return {"restaurants": list(location_ids)}
+        # 2번 이상 등장하는 ID 필터링
+        result = [rid for rid, count in counter.items() if count > 2]
+        print(result)
+        return {"restaurants": result}
 
     except Exception as e:
         return {"error": str(e)}
 
-def get_restaurant_info(restaurant_ids: dict) -> dict:
-    print("상세 정보 조회 및 필터링 함수 호출")
-    try:
-        candidates = restaurant_ids.get("restaurants", [])
-        if not candidates:
-            return {"restaurants": []}
-            
-        rating_data = bring_rating_count(candidates)
-        top_10_ids = filtering_restaurant(rating_data)
-        final_details = bring_restaurants_list(top_10_ids)
-        return final_details
-    except Exception as e:
-        print(f"상세 정보 조회 중 오류: {e}")
-        return {"error": f"상세 정보를 조회하는 중 오류 발생: {str(e)}"}
+async def final_recommend(restaurants_info: dict, input_text:str) -> dict:
+    ai_rating = await run_llm_analysis(restaurants_info)
+    results = await get_final_recommendation(ai_rating, input_text)
+    return results
 
-async def final_recommend(restaurants_info: dict, input_text: str) -> list:
-    result = await get_final_recommendation(restaurants_info, input_text)
-    return result
+graph_builder = StateGraph(State)
+
