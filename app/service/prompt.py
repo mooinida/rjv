@@ -23,16 +23,22 @@ final_selection_prompt_template = PromptTemplate.from_template("""
 
 [AI 분석 결과]
 {analyzed_results}
-                                                            
 
 조건:
 - 사용자의 요청에 어울리는 식당을 5곳 추천해주세요.
 - 어울린다고 생각한 이유도 설명해주세요.
-아래 형식으로 정리해서 답해주세요:
+- 반드시 아래 JSON 배열 형식으로만 답변하세요. (설명 없이)
 
-1. 식당 이름 - 상세점보:식당url
-2. 추천이유                                     
-3. AI평점 , 실제평점
+[
+  {
+    "name": "식당 이름",
+    "url": "식당 url",
+    "reason": "추천 이유",
+    "ai_score": "AI평점",
+    "real_score": "실제평점"
+  },
+  ...
+]
 """)
 
 context_prompt_template= PromptTemplate.from_template("""
