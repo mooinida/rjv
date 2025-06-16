@@ -27,10 +27,9 @@ async def recommend_by_context(text: str):
     restaurant_list = restaurants_data["restaurants"]
     place_id_list = [int(r["placeId"]) for r in restaurant_list]
     restaurants = bring_context_filter_restaurants (place_id_list, keywords)
-    if not restaurants or not restaurants.get("restaurants"):
-        return {"error": "추천할 식당이 없습니다."}
     ai_rating = await run_llm_analysis(restaurants)
-    results = await get_final_recommendation(ai_rating, text)
+
+    results = await get_final_recommendation(ai_rating)
     return results
 
     
