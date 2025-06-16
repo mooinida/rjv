@@ -3,7 +3,6 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 import os
 from dotenv import load_dotenv
 import asyncio
-import json
 JWT_TOKEN = os.getenv("JWT_TOKEN")
 load_dotenv()
 
@@ -40,13 +39,9 @@ async def run_llm_analysis(data: dict) -> list:
     return await asyncio.gather(*tasks)
 
 
-async def get_final_recommendation(results: list, input_text:str) -> list:
+async def get_final_recommendation(results: list, input_text:str) -> str:
     """
     전체 흐름: 개별 분석 → 종합 프롬프트 → 최종 추천 생성
     """
     final_prompt = build_final_recommendation_prompt(results, input_text)
-    response = await call_llm(final_prompt, print_result = True)
-    try:
-        return json.loads(response)
-    except Exception:
-        return {"raw": response}
+    return await call_llm(final_prompt, print_result = True)
