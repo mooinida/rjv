@@ -43,7 +43,7 @@ async def recommend_by_location(text: str):
     
     ai_rating = await run_llm_analysis(top_restaurants)
 
-    results = await get_final_recommendation(ai_rating)
+    results = await get_final_recommendation(ai_rating, text)
     end = time.time()
     print(f"⏱️ 처리 시간: {end - start:.2f}초") 
     return results
