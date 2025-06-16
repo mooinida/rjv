@@ -26,15 +26,15 @@ async def recommend_by_menu(text: str):
     restaurants_data = get_nearby_restaurants_DB(coords["latitude"], coords["longitude"], radius = 500)
     
 
-    if not restaurants_data or not restaurants_data.get("restaurants"):
-        return {"error": "추천할 식당이 없습니다."}
+    if not restaurants_data or restaurants_data.get("restaurants") is None:
+        return {"error": "식당 데이터를 불러오지 못했습니다."}
     
     restaurant_list = restaurants_data["restaurants"]
     place_id_list = [int(r["placeId"]) for r in restaurant_list]
     restaurants = bring_menu_filter_restaurants(place_id_list, keywords)
     ai_rating = await run_llm_analysis(restaurants)
 
-    results = await get_final_recommendation(ai_rating, text)
+    results = await get_final_recommendation(ai_rating)
     return results
 
     
