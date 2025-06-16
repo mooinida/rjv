@@ -34,7 +34,7 @@ async def recommend_by_menu(text: str):
     restaurants = bring_menu_filter_restaurants(place_id_list, keywords)
     ai_rating = await run_llm_analysis(restaurants)
 
-    results = await get_final_recommendation(ai_rating)
+    results = await get_final_recommendation(ai_rating, text)
     return results
 
     
