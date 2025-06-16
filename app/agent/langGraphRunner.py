@@ -1,6 +1,7 @@
 import os
 import sys
 import asyncio
+import json
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -72,6 +73,14 @@ async def detail_node(state: State) -> dict:
 async def final_node(state: State) -> dict:
     result = await final_recommend(state["restaurant_details"], state["user_input"])
     print("📦 final_node result:", result)
+    # 만약 result가 문자열(JSON)이라면 파싱해서 반환
+    if isinstance(result, str):
+        try:
+            parsed = json.loads(result)
+            return {"result": parsed}
+        except Exception as e:
+            print("❌ JSON 파싱 실패:", e)
+            return {"result": result}
     return {"result": result}
 
 
