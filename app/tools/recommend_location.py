@@ -41,8 +41,9 @@ async def recommend_by_location(text: str):
     
     top_restaurants = sorted(filtered_restaurants, key=lambda r: r["score"], reverse=True)[:10]
     
+    if not top_restaurants:
+        return {"error": "추천할 식당이 없습니다."}
     ai_rating = await run_llm_analysis(top_restaurants)
-
     results = await get_final_recommendation(ai_rating, text)
     end = time.time()
     print(f"⏱️ 처리 시간: {end - start:.2f}초") 
