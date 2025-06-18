@@ -1,102 +1,91 @@
-import requests
+# main.py
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+import asyncio
 import os
+import sys
 from dotenv import load_dotenv
-# time, json, base64 임포트 제거 (만료 시간 파싱 불필요)
 
-load_dotenv()
+# --- LangGraph 프로젝트 경로 설정 ---
+LANGGRAPH_PROJECT_PATH = os.path.abspath(os.path.dirname(__file__))
+sys.path.append(LANGGRAPH_PROJECT_PATH)
+print(f"LangGraph project path added to sys.path: {LANGGRAPH_PROJECT_PATH}")
 
-SPRING_SERVER = "http://localhost:8080" 
-# 또는 SPRING_SERVER = "http://mooin.shop:8080" 
+# --- 기존 LangGraph Runner 및 관련 모듈 임포트 ---
+try:
+    from agent.langGraphRunner import run_recommendation_pipeline # LangGraph 함수 임포트
+    # 이제 bring_to_server 등에서 전역 토큰 변수를 임포트할 필요 없음.
+    # main.py 미들웨어에서 os.environ["JWT_TOKEN"]을 설정하면 됨.
 
-# --- 토큰 관리 변수 (단순화: Access Token만 사용) ---
-# 전역 변수 ACCESS_TOKEN, REFRESH_TOKEN, TOKEN_EXPIRY_TIME 제거
-# 매번 os.getenv("JWT_TOKEN")으로 최신 토큰을 읽어옵니다.
+    print("LangGraph modules loaded successfully.")
+except ImportError as e:
+    print(f"Error importing LangGraph modules: {e}")
+    print(f"Please ensure your LangGraph project (expected at {LANGGRAPH_PROJECT_PATH}) is correctly configured and accessible.")
+    sys.exit(1)
 
-# --- API 호출 함수들 수정 (토큰 갱신 로직 제거) ---
-def _make_authenticated_request(method, url, json_data=None, params=None):
-    # JWT_TOKEN 환경 변수에서 현재 Access Token 로드
-    current_access_token = os.getenv("JWT_TOKEN")
-    
-    if not current_access_token:
-        # 토큰이 없으면 즉시 오류 발생 (인증 필요)
-        raise RuntimeError("Authentication required: Access Token is not set. Please log in manually.")
+app = FastAPI()
 
-    headers = {
-        "Authorization": f"Bearer {current_access_token}", # 로드된 토큰 사용
-        "Content-Type": "application/json"
-    }
-    
-    print(f"🌍 Requesting URL: {url}")
-    print(f"📦 Payload: {json_data}")
-    print(f"🔐 Headers (Authorization token masked): {{'Content-Type': '{headers.get('Content-Type')}', 'Authorization': 'Bearer ...'}}" )
+# --- CORS 설정 --- (기존과 동일)
+origins = [
+    "http://localhost:5173",         # 로컬 테스트
+    "http://mooin.shop",             # 프론트 도메인
+    "http://mooin.shop:5173",        # 혹시 프론트가 5173에서 테스트 중이라면 이것도 추가
+]
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# --- 환경 변수 로드 --- (기존과 동일)
+load_dotenv(dotenv_path=os.path.abspath(os.path.join(os.path.dirname(__file__), '.env')))
+print("FastAPI .env file loaded.")
+
+# --- JWT 토큰 검증 및 갱신 미들웨어 ---
+# 프론트엔드로부터 받은 Access Token을 LangGraph 모듈에 전달합니다.
+@app.middleware("http")
+async def verify_jwt_token(request: Request, call_next):
+    # OPTIONS 요청은 CORS 프리플라이트 요청 → 인증 없이 통과시켜야 함
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
+    if request.url.path.startswith("/api/langgraph"):
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            print("Unauthorized: Missing or invalid token format.")
+            return JSONResponse(status_code=401, content={"detail": "Unauthorized: Missing or invalid token"})
+
+        token = auth_header.split(" ")[1]
+        os.environ["JWT_TOKEN"] = token
+
+    return await call_next(request)
+
+# --- LangGraph API 엔드포인트 --- (기존과 동일)
+@app.post("/api/langgraph/invoke")
+async def invoke_langgraph_api(request_data: Request):
     try:
-        if method == "POST":
-            response = requests.post(url, json=json_data, headers=headers, params=params, timeout=15)
-        elif method == "GET":
-            response = requests.get(url, headers=headers, params=params, timeout=15)
-        else:
-            raise ValueError(f"Unsupported HTTP method: {method}")
+        data = await request_data.json()
+        user_input = data.get("user_input")
 
-        response.raise_for_status() 
-        return response
-    except requests.exceptions.RequestException as e:
-        print(f"❌ API call to {url} failed: {e}")
-        if e.response is not None:
-            print(f"Response status code: {e.response.status_code}")
-            print(f"Response text: {e.response.text}")
+        if not user_input:
+            raise HTTPException(status_code=400, detail="user_input is required")
+
+        state = {"user_input": user_input}
+        langgraph_result = await run_recommendation_pipeline(state)
         
-        # 401 오류는 Access Token 만료/무효 가능성이 높으므로 RuntimeError로 전환
-        if e.response is not None and e.response.status_code == 401:
-            raise RuntimeError(f"Authentication required: API call failed with 401. Access Token invalid/expired.")
-        else:
-            raise # 다른 RequestException은 그대로 다시 전달
-
-# 각 API 호출 함수들은 _make_authenticated_request를 사용 (변화 없음)
-def bring_menu_filter_restaurants(keywords: list):
-    url = f"{SPRING_SERVER}/api/restaurants/filter/menu"
-    response = _make_authenticated_request("POST", url, json_data={"keywords": keywords})
-    return {"restaurants": response.json()}
-
-def bring_context_filter_restaurants(contexts: list):
-    url = f"{SPRING_SERVER}/api/restaurants/filter/context"
-    response = _make_authenticated_request("POST", url, json_data={"keywords": contexts})
-    return {"restaurants": response.json()}
-
-def bring_restaurants_list(placeIds: list):
-    url = f"{SPRING_SERVER}/api/restaurants/restaurants"
-    response = _make_authenticated_request("POST", url, json_data=placeIds)
-    return {"restaurants": response.json()}
-
-def send_restaurant_rating(place_id: int, rating: float, count: int):
-    url = f"{SPRING_SERVER}/api/restaurants/{place_id}/rating"
-    payload = {"rating": rating, "reviewCount": count}
-    response = _make_authenticated_request("POST", url, json_data=payload)
-    return response.status_code, response.text
-
-def send_restaurant(restaurant: dict):
-    url = f"{SPRING_SERVER}/api/restaurants"
-    response = _make_authenticated_request("POST", url, json_data=restaurant)
-    return response.status_code, response.text
-
-def restaurant_is_exist(place_id: int) -> bool:
-    try:
-        url = f"{SPRING_SERVER}/api/restaurants/{place_id}"
-        response = _make_authenticated_request("GET", url)
-        return response.ok and response.json()
+        if "error" in langgraph_result and "Authentication required" in langgraph_result["error"]:
+            return JSONResponse(status_code=401, content={"detail": "Authentication required: Please re-login."})
+        elif "error" in langgraph_result:
+            return JSONResponse(status_code=500, content={"detail": langgraph_result["error"]})
+        
+        return {"result": langgraph_result.get("result", "응답 없음")}
+    
     except RuntimeError as e: 
-        print(f"Authentication required for restaurant_is_exist: {e}")
-        return False
-    except requests.exceptions.RequestException as e:
-        print(f"Error checking if restaurant {place_id} exists: {e}")
-        return False
-
-def send_reviews(place_id: int, reviews: list):
-    url = f"{SPRING_SERVER}/api/restaurants/{place_id}/reviews"
-    response = _make_authenticated_request("POST", url, json_data=reviews)
-    return response.status_code, response.text
-
-def send_menus(place_id: int, items: list):
-    url = f"{SPRING_SERVER}/api/restaurants/{place_id}/menus"
-    response = _make_authenticated_request("POST", url, json_data=items)
-    return response.status_code, response.text
+        return JSONResponse(status_code=401, content={"detail": f"Authentication required: {e}"})
+    except Exception as e:
+        print(f"Unhandled exception in LangGraph API: {e}")
+        return JSONResponse(status_code=500, content={"detail": f"LangGraph execution failed: {e}"})
